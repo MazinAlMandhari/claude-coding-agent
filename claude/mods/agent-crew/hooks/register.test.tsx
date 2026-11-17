@@ -132,6 +132,34 @@ test('agents started together after a finished batch share one new batch', async
   await ui.unmount()
 })
 
+test('the crew lineup in the desktop pane is drawn large even when nobody works', async ($, on) => {
+  engine(on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 81 } })
+  const lineup = (await ui.findAll({ type: 'Svg' })).find(s => String(s.props.alt).startsWith('Crew:'))
+  expect(lineup).toBeTruthy()
+  // About 2x the crab's 28-unit height: well above the old 34 px strip.
+  expect(Number(lineup?.props.height)).toBeGreaterThanOrEqual(56)
+  await ui.unmount()
+})
+
+test('the pane grows by exactly the extra height of the larger lineup', async ($, on) => {
+  engine(on)
+  const measure = async (bodyColumns: number) => {
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns } })
+    const svgs = await ui.findAll({ type: 'Svg' })
+    const grid = svgs.filter(s => s.props.alt === 'dotted grid').reduce((sum, s) => sum + Number(s.props.height), 0)
+    const lineup = Number(svgs.find(s => String(s.props.alt).startsWith('Crew:'))?.props.height)
+    await ui.unmount()
+    return { grid, lineup }
+  }
+  const narrow = await measure(20)
+  const wide = await measure(81)
+  // Narrow panes keep the usual crab size (1.1x: 37 px strip); the grid under the content must
+  // grow with the strip, or the last row would be cut off.
+  expect(narrow.lineup).toBe(37)
+  expect(wide.grid - narrow.grid).toBe(wide.lineup - narrow.lineup)
+})
+
 test('the desktop bar drawing shrinks to fit so its buttons stay in view', async ($, on) => {
   engine(on)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'd1' }))

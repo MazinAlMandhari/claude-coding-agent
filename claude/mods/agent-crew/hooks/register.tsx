@@ -441,13 +441,33 @@ const headerSvg = (W: number, t: ReturnType<typeof totals>): string => {
 }
 
 // The crew lineup: all seven crabs, dim when idle, walking with a live dot while working.
-const lineupSvg = (W: number, busy: Set<string>): string => {
-  const step = Math.max(34, Math.min(44, Math.floor(W / CREW.length)))
+// In the pane the crabs grow to share the width (up to 2x, about 60 px each); the small corner
+// widget keeps them at their usual size.
+const CRAB_TALL = 28 // the crab's drawing is CRAB_BOX (30) x 28 units before scaling
+const LINEUP_MAX_SCALE = 2
+const lineupScale = (W: number): number =>
+  Math.max(CRAB_SCALE, Math.min(LINEUP_MAX_SCALE, (W / CREW.length - 8) / CRAB_BOX))
+const lineupHeight = (W: number): number => Math.round(CRAB_TALL * lineupScale(W)) + 6
+
+const lineupSvg = (W: number, busy: Set<string>, isLarge = true): string => {
+  if (!isLarge) {
+    const step = Math.max(34, Math.min(44, Math.floor(W / CREW.length)))
+    const body = CREW.map((m, i) => {
+      const isBusy = busy.has(m.type)
+      return crab(i * step, 1, m.type, !isBusy, isBusy) + (isBusy ? `<circle class="live" cx="${i * step + 32}" cy="5" r="3" fill="${m.color}"/>` : '')
+    }).join('')
+    return svg(W, LINEUP_H, body)
+  }
+  const scale = lineupScale(W)
+  const size = CRAB_BOX * scale
+  const step = W / CREW.length
   const body = CREW.map((m, i) => {
     const isBusy = busy.has(m.type)
-    return crab(i * step, 1, m.type, !isBusy, isBusy) + (isBusy ? `<circle class="live" cx="${i * step + 32}" cy="5" r="3" fill="${m.color}"/>` : '')
+    const x = Math.round(i * step + (step - size) / 2)
+    const dot = isBusy ? `<circle class="live" cx="${x + size - 2}" cy="6" r="${Math.max(3, scale * 2)}" fill="${m.color}"/>` : ''
+    return crab(x, 3, m.type, !isBusy, isBusy, scale) + dot
   }).join('')
-  return svg(W, LINEUP_H, body)
+  return svg(W, lineupHeight(W), body)
 }
 
 // One row of the "Who's who" legend: the agent, its role and what it has done so far.
@@ -742,7 +762,7 @@ export const register: Register = on => {
     if (e.props.placement === 'widget') {
       if (e.surface === 'desktop' && 'Svg' in ui) {
         const { Svg } = ui
-        return <Svg source={lineupSvg(CREW.length * 36, busy)} alt={`${running.length} of your agents working`} width={CREW.length * 36} height={LINEUP_H} />
+        return <Svg source={lineupSvg(CREW.length * 36, busy, false)} alt={`${running.length} of your agents working`} width={CREW.length * 36} height={LINEUP_H} />
       }
       return (
         <Text>
@@ -800,7 +820,7 @@ export const register: Register = on => {
       const shownDone = p.isDoneCollapsed ? 0 : finished.length
       const crewRows = p.isCrewOpen ? CREW.length : 0
       const lines = 2 + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0)
-      const gridH = HEADER_H + LINEUP_H + lines * LINE_H + crewRows * CREW_ROW_H + (running.length + shownDone) * ROW_H
+      const gridH = HEADER_H + lineupHeight(W) + lines * LINE_H + crewRows * CREW_ROW_H + (running.length + shownDone) * ROW_H
       return (
         <Box flexDirection="column">
           {/* The grid sizes the pane; the content is placed over it. */}
@@ -809,7 +829,7 @@ export const register: Register = on => {
           ))}
           <Box flexDirection="column" position="absolute" top={0} left={0} right={0}>
             <Svg source={headerSvg(W, t)} alt={summary} width={W} height={HEADER_H} />
-            <Svg source={lineupSvg(W, busy)} alt={`Crew: ${CREW.map(m => `${m.label}${busy.has(m.type) ? ' (working)' : ''}`).join(', ')}`} width={W} height={LINEUP_H} />
+            <Svg source={lineupSvg(W, busy)} alt={`Crew: ${CREW.map(m => `${m.label}${busy.has(m.type) ? ' (working)' : ''}`).join(', ')}`} width={W} height={lineupHeight(W)} />
             {toggleCrew}
             {p.isCrewOpen &&
               CREW.map(m => (
