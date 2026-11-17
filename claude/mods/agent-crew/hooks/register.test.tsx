@@ -202,6 +202,59 @@ test('the desktop bar drawing shrinks to fit so its buttons stay in view', async
   await ui.unmount()
 })
 
+test('the pane lists only the latest batch and folds earlier runs under Earlier', async ($, on) => {
+  engine(on)
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `e${++n}` }))
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.agent.spawn(spawn('code-reviewer', 'Old review', 'e1'))
+  await $.turn.complete(finish('e1'))
+  await Promise.all([$.agent.spawn(spawn('planner', 'New plan', 'e2')), $.agent.spawn(spawn('verifier', 'New check', 'e3'))])
+  await $.turn.complete(finish('e2'))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /New plan/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /New check/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Old review/ })).toBeFalsy()
+  expect(await ui.find({ type: 'Button', key: 'earlier' })).toBeTruthy()
+  expect((await ui.find({ type: 'Button', key: 'earlier' }))?.props.label).toContain('Earlier · 1')
+
+  await ui.press({ key: 'earlier' })
+  expect(await ui.find({ type: 'Text', text: /Old review/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('a run still going keeps its batch open, so runs that finish meanwhile are not folded', async ($, on) => {
+  engine(on)
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `k${++n}` }))
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.agent.spawn(spawn('verifier', 'Long check', 'k1'))
+  await $.agent.spawn(spawn('code-reviewer', 'Quick review', 'k2'))
+  await $.turn.complete(finish('k2'))
+  await $.agent.spawn(spawn('debugger', 'Later fix', 'k3'))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Quick review/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Button', key: 'earlier' })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('with a single batch there is nothing to fold', async ($, on) => {
+  engine(on)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 's1' }))
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.agent.spawn(spawn('debugger', 'Only run', 's1'))
+  await $.turn.complete(finish('s1'))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Button', key: 'earlier' })).toBeFalsy()
+  await ui.unmount()
+})
+
 test('no bar and no row for agents outside the crew', async ($, on) => {
   engine(on)
   on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'x1' }))

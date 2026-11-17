@@ -22,6 +22,8 @@ export type Panel = {
   isCompact: boolean
   isDoneCollapsed: boolean
   isCrewOpen: boolean
+  /** Earlier batches' runs are shown; off by default (an older stored panel lacks the field). */
+  isEarlierOpen?: boolean
 }
 
 /** The runs the progress bar above the prompt counts: from the first start until all finish. */

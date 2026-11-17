@@ -108,6 +108,21 @@ const tokensOf = (u: Usage): number =>
 
 const windowOf = (model: string): number => (/haiku-4|claude-3/i.test(model) ? 200_000 : 1_000_000)
 
+// Runs that overlap in time form one batch: a run starts a new batch when every run before it has
+// ended. The pane lists the latest batch and folds the earlier ones, so a long session doesn't
+// show each agent many times over.
+const batchesOf = (list: AgentRun[]): AgentRun[][] => {
+  const groups: AgentRun[][] = []
+  let openUntil = -Infinity
+  for (const a of [...list].sort((x, y) => x.startedAt - y.startedAt)) {
+    const current = groups.at(-1)
+    if (current === undefined || a.startedAt >= openUntil) groups.push([a])
+    else current.push(a)
+    openUntil = Math.max(openUntil, a.status === 'running' ? Infinity : (a.endedAt ?? a.startedAt))
+  }
+  return groups
+}
+
 const elapsed = (a: AgentRun, at: number): number => (a.endedAt ?? Math.max(at, a.startedAt)) - a.startedAt
 
 const totals = (list: AgentRun[], at: number) => {
@@ -766,7 +781,9 @@ export const register: Register = on => {
     const p = await read($, panel)
     const at = Math.max(await read($, now), ...list.map(a => a.startedAt), 0)
     const running = list.filter(a => a.status === 'running').reverse()
-    const finished = list.filter(a => a.status !== 'running').reverse()
+    const latest = new Set((batchesOf(list).at(-1) ?? []).map(a => a.id))
+    const finished = list.filter(a => a.status !== 'running' && latest.has(a.id)).reverse()
+    const earlier = list.filter(a => a.status !== 'running' && !latest.has(a.id)).reverse()
     const busy = new Set(running.map(a => a.type))
     const countOf = (type: string) => list.filter(a => a.type === type && a.status !== 'running').length
     const t = totals(list, at)
@@ -813,6 +830,14 @@ export const register: Register = on => {
         onPress={() => update($, panel, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
       />
     )
+    const toggleEarlier = (
+      <Button
+        key="earlier"
+        label={`${p.isEarlierOpen ? '▾' : '▸'} Earlier · ${earlier.length}`}
+        plain
+        onPress={() => update($, panel, prev => ({ ...prev, isEarlierOpen: !prev.isEarlierOpen }))}
+      />
+    )
     const summary = `≈${fmtCost(t.cost)}, ${fmtTokens(t.tokens)} tokens, ${fmtTime(t.time)}`
 
     if (e.surface === 'desktop' && 'Svg' in ui) {
@@ -831,9 +856,9 @@ export const register: Register = on => {
           </Box>
         )
       }
-      const shownDone = p.isDoneCollapsed ? 0 : finished.length
+      const shownDone = (p.isDoneCollapsed ? 0 : finished.length) + (p.isEarlierOpen ? earlier.length : 0)
       const crewRows = p.isCrewOpen ? CREW.length : 0
-      const lines = 2 + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0)
+      const lines = 2 + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (earlier.length > 0 ? 1 : 0)
       const gridH = HEADER_H + lineupHeight(W) + lines * LINE_H + crewRows * CREW_ROW_H + (running.length + shownDone) * ROW_H
       return (
         <Box flexDirection="column">
@@ -858,6 +883,11 @@ export const register: Register = on => {
             {finished.length > 0 && toggleDone}
             {!p.isDoneCollapsed &&
               finished.map(a => (
+                <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, ${a.status}`} width={W} height={ROW_H} />
+              ))}
+            {earlier.length > 0 && toggleEarlier}
+            {p.isEarlierOpen &&
+              earlier.map(a => (
                 <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, ${a.status}`} width={W} height={ROW_H} />
               ))}
           </Box>
@@ -937,6 +967,8 @@ export const register: Register = on => {
             {running.map(row)}
             {finished.length > 0 && toggleDone}
             {!p.isDoneCollapsed && finished.map(row)}
+            {earlier.length > 0 && toggleEarlier}
+            {p.isEarlierOpen && earlier.map(row)}
           </Box>
         )}
       </Box>

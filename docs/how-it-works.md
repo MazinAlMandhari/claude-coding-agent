@@ -122,6 +122,9 @@ events Claude Code gives it inside your session.
   While that agent works, its crab dances: it sways side to side with a little hop, raises the
   claw on the side it leans to, walks in place (the astronaut floats), and its prop moves. It all respects reduced-motion
   settings.
+- **The run list** shows the latest batch: runs that overlap in time, from the first start until
+  all have finished. Runs from earlier batches fold under **▸ Earlier**; click it to open them.
+  The totals at the top still count the whole session.
 - **The progress bar** above the message box counts the current batch: the agents started since
   the last batch finished. `×7` opens the panel; `✕` hides the bar until the next batch.
 - **In the terminal** the same panel is drawn with text and symbols instead of pictures.

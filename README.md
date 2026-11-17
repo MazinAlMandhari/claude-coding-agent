@@ -45,7 +45,8 @@ they are not a security boundary (see [the limits](docs/how-it-works.md#limits-w
 
 **The My agents panel.** A side panel that opens by itself in each session, with:
 - the crew lineup, where each agent is a pixel crab in its own costume and colour;
-- one row per agent run, showing its task, model, context used, tokens, estimated cost and time;
+- one row per agent run in the latest batch, showing its task, model, context used, tokens,
+  estimated cost and time (runs from earlier batches fold under **Earlier**);
 - totals for cost, tokens and time;
 - a progress bar above the message box for the current batch of runs (`1/2 done`, 50%).
 
