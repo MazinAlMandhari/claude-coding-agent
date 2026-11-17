@@ -142,6 +142,28 @@ test('the crew lineup in the desktop pane is drawn large even when nobody works'
   await ui.unmount()
 })
 
+test('a working crab dances and waves a free claw while idle crabs keep still', async ($, on) => {
+  engine(on)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'z1' }))
+
+  await $.agent.spawn(spawn('code-reviewer', 'Review login fix', 'z1'))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 81 } })
+  const source = String((await ui.findAll({ type: 'Svg' })).find(s => String(s.props.alt).startsWith('Crew:'))?.props.source)
+  expect(source).toContain('@keyframes dance')
+  expect(source).toContain('class="c-code-reviewer run"><g class="sw">')
+  expect(source).toContain('class="c-planner"><g class="sw">')
+  // Every costume keeps at least one claw free to wave (the others hold its prop).
+  const crabs = source.split('class="c-').slice(1)
+  expect(crabs.length).toBe(7)
+  for (const crab of crabs) {
+    expect(/class="c[ab]"/.test(crab)).toBe(true)
+    // Claws come first, under the costume, so the astronaut's glass dome still covers them.
+    expect(crab.indexOf('<g class="c')).toBeLessThan(crab.indexOf('<rect'))
+  }
+  await ui.unmount()
+})
+
 test('the pane grows by exactly the extra height of the larger lineup', async ($, on) => {
   engine(on)
   const measure = async (bodyColumns: number) => {

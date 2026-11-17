@@ -158,10 +158,12 @@ type Fill = (x: number, y: number, w: number, h: number, c: string, cls?: string
 const stamp = (f: Fill, x: number, y: number, rows: string[], map: Record<string, string>, cls?: string): void =>
   rows.forEach((row, dy) => [...row].forEach((ch, dx) => map[ch] && f(x + dx, y + dy, 1, 1, map[ch] ?? '', cls)))
 
-// `armFront` raises the front claw (-4) to hold a prop; `armCls` makes it travel with the prop.
-const crabBody = (f: Fill, armFront = 0, armCls?: string): void => {
+// `armFront` raises the front claw (-4) to hold a prop. A free claw (`ca` back, `cb` front)
+// waves while the crab dances; a claw holding a prop passes `bd` (it stays put) or the prop's
+// class (it travels with the prop).
+const crabBody = (f: Fill, armFront = 0, armCls = 'cb', backCls = 'ca'): void => {
   f(7, 10, 16, 12, CLAY)
-  f(3, 14, 4, 4, CLAY)
+  f(3, 14, 4, 4, CLAY, backCls)
   f(23, 14 + armFront, 4, 4, CLAY, armCls)
   f(9, 12, 2, 2, INK)
   f(19, 12, 2, 2, INK)
@@ -180,7 +182,7 @@ const WOOD = '#7A4A26'
 const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
   // Planner: cap and clipboard; the pencil scribbles the plan.
   planner: (f, t) => {
-    crabBody(f, -4)
+    crabBody(f, -4, 'bd')
     stamp(f, 6, 5, ['.....tttttttt.....', '...tttttwwttttt...', '..ttttttwwtttttt..', '..ttttttttttttttdddd', 'dddddddddddddddddd'], { t, w: WHITE, d: '#1E40AF' })
     stamp(f, 24, 3, ['.kk..', 'bbbbb', 'bwwwb', 'bkkwb', 'bwwwb', 'bkkwb', 'bwwwb', 'bbbbb'], { b: '#8B5A2B', w: WHITE, k: GREY })
     f(27, 5, 1, 3, '#F5C542', 'pen')
@@ -188,7 +190,7 @@ const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
   },
   // Test writer: scientist with goggles and wild hair; the flask bubbles.
   'test-writer': (f, t) => {
-    crabBody(f, -4)
+    crabBody(f, -4, 'bd')
     stamp(f, 7, 6, ['.w....w....w..', 'ww..www..ww.w.', '.wwwwwwwwwwwww', 'wwwwwwwwwwwwww'], { w: '#EDEDEA' })
     for (const x of [8, 18]) {
       f(x, 11, 4, 1, GREY); f(x, 14, 4, 1, GREY); f(x, 11, 1, 4, GREY); f(x + 3, 11, 1, 4, GREY)
@@ -200,7 +202,7 @@ const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
   },
   // Verifier: engineer in a hard hat; the wrench turns a bolt.
   verifier: (f, t) => {
-    crabBody(f)
+    crabBody(f, 0, 'cb', 'bd')
     stamp(f, 6, 4, ['.....yyyyyyyy.....', '...yyyyyhhyyyyy...', '..yyyyyyhhyyyyyy..', '..yyyyyyhhyyyyyy..', '.yyyyyyyhhyyyyyyy.', 'dddddddddddddddddd'], { y: t, h: '#FBE08A', d: '#A16207' })
     f(13, 5, 4, 2, INK)
     stamp(f, 0, 10, ['.s.s', 'sss.', '.s..', '.s..'], { s: GREY }, 'it')
@@ -215,7 +217,7 @@ const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
   },
   // Security reviewer: knight with a plumed helmet; the shield glints, the plume waves.
   'security-reviewer': (f, t) => {
-    crabBody(f, -4)
+    crabBody(f, -4, 'bd')
     stamp(f, 13, 0, ['.pp', 'ppp', 'pp.'], { p: t }, 'plume')
     stamp(f, 6, 3, ['....ssssssssss....', '...sssssssssssss..', '..ssssssssssssss..', '..sssssssssssssss.', '.ssssssssssssssss.', '.ssssssssssssssss.', 'dddddddddddddddddd'], { s: STEEL, d: GREY })
     f(14, 4, 2, 5, '#D9DCE2')
@@ -224,7 +226,7 @@ const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
   },
   // Debugger: bug hunter in a pith helmet; the net swings and the bug hops away.
   debugger: (f, t) => {
-    crabBody(f)
+    crabBody(f, 0, 'bd')
     stamp(f, 6, 4, ['.....kkkkkkkk.....', '...kkkkkkkkkkkk...', '..kkkkkkkkkkkkkk..', '..tttttttttttttt..', 'kkkkkkkkkkkkkkkkkk'], { k: '#C8B48A', t })
     stamp(f, 24, 0, ['.www.', 'w...w', 'w...w', '.www.'], { w: WHITE }, 'it')
     f(26, 4, 1, 10, WOOD, 'it')
@@ -243,10 +245,15 @@ const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
 }
 
 // Pure CSS, run by the compositor. Periods divide one second, so the once-a-second redraw of a
-// running row restarts them in phase. Every crab walks; each costume adds its prop's motion.
+// running row restarts them in phase. Every crab walks and dances (sways side to side with a
+// little hop, raising the claw on the side it leans to); each costume adds its prop's motion.
 const CRAB_CSS = `<style>
+.run .sw{transform-origin:50% 100%;animation:dance 1s ease-in-out infinite}
+.run .ca{animation:pump 1s steps(1) infinite}.run .cb{animation:pump 1s steps(1) infinite -.5s}
+@keyframes dance{25%{transform:translate(-1px,-1px) rotate(-4deg)}50%{transform:none}75%{transform:translate(1px,-1px) rotate(4deg)}}
+@keyframes pump{12.5%{transform:translateY(-4px)}37.5%{transform:none}}
 .run .la{animation:st .5s steps(1) infinite}.run .lb{animation:st .5s steps(1) infinite -.25s}
-.run .bd{animation:bob .5s steps(1) infinite -.125s}
+.run .bd{animation:bob .5s steps(1) infinite -.375s}
 .run g{transform-box:fill-box}
 @keyframes st{50%{transform:translateY(-1px)}}@keyframes bob{50%{transform:translateY(1px)}}
 @keyframes blink{50%{opacity:.15}}
@@ -280,7 +287,13 @@ const costumeOf = (type: string): string => {
 }
 
 // Body and props nest inside `bd` so a prop rides the bob and adds its own motion; legs stay
-// outside it and step on their own.
+// outside it and step on their own. The claws are drawn first, under the costume (the
+// astronaut's glass dome covers them), and `sw` wraps it all so the whole crab sways.
+const CLAWS = ['ca', 'cb']
+// A crab at the left edge of its picture sits this far in, so its sway never clips the wrench;
+// one at the top edge sits 1 down for the same reason.
+const EDGE = 3
+
 const crab = (x: number, y: number, costume: string, dim = false, isWalking = false, scale = CRAB_SCALE): string => {
   const groups = new Map<string, string[]>([['bd', []]])
   const f: Fill = (cx, cy, w, h, c, cls = 'bd') => {
@@ -290,9 +303,10 @@ const crab = (x: number, y: number, costume: string, dim = false, isWalking = fa
   const draw = COSTUMES[costume] ?? COSTUMES.plain
   draw?.(f, colorOf(costume))
   const group = (cls: string) => `<g class="${cls}">${(groups.get(cls) ?? []).join('')}</g>`
-  const props = [...groups.keys()].filter(k => k !== 'bd' && k !== 'la' && k !== 'lb')
-  const body = `<g class="bd">${(groups.get('bd') ?? []).join('')}${props.map(group).join('')}</g>`
-  return `<g transform="translate(${x},${y}) scale(${scale})" opacity="${dim ? 0.45 : 1}" shape-rendering="crispEdges"><g class="c-${costume}${isWalking ? ' run' : ''}">${body}${group('la')}${group('lb')}</g></g>`
+  const claws = CLAWS.filter(k => groups.has(k))
+  const props = [...groups.keys()].filter(k => !['bd', 'la', 'lb', ...CLAWS].includes(k))
+  const body = `<g class="bd">${claws.map(group).join('')}${(groups.get('bd') ?? []).join('')}${props.map(group).join('')}</g>`
+  return `<g transform="translate(${x},${y}) scale(${scale})" opacity="${dim ? 0.45 : 1}" shape-rendering="crispEdges"><g class="c-${costume}${isWalking ? ' run' : ''}"><g class="sw">${body}${group('la')}${group('lb')}</g></g></g>`
 }
 
 // ---------------------------------------------------------------------------- the bar above the prompt
@@ -386,7 +400,7 @@ const barSvg = (s: BarState, W: number): string => {
 <text x="${pillX + pillW / 2}" y="${BAR_H / 2 + 4}" text-anchor="middle" font-family="${FONT}" font-size="11" font-weight="600" fill="#ffffff">${xml(text)}</text>
 </g>
 <text class="m" x="${W - BAR_CRAB_W - 6}" y="${BAR_ROW_H / 2 + 4.5}" text-anchor="end" font-family="${FONT}" font-size="12.5" font-variant-numeric="tabular-nums">${percent}</text>
-${CRAB_CSS}${crab(W - BAR_CRAB_W + 1, 0, s.costume, false, isWorking, 0.8)}
+${CRAB_CSS}${crab(W - BAR_CRAB_W - 2, 1, s.costume, false, isWorking, 0.8)}
 </svg>`
 }
 
@@ -465,7 +479,7 @@ const lineupSvg = (W: number, busy: Set<string>, isLarge = true): string => {
     const isBusy = busy.has(m.type)
     const x = Math.round(i * step + (step - size) / 2)
     const dot = isBusy ? `<circle class="live" cx="${x + size - 2}" cy="6" r="${Math.max(3, scale * 2)}" fill="${m.color}"/>` : ''
-    return crab(x, 3, m.type, !isBusy, isBusy, scale) + dot
+    return crab(x, 6, m.type, !isBusy, isBusy, scale) + dot
   }).join('')
   return svg(W, lineupHeight(W), body)
 }
@@ -477,7 +491,7 @@ const crewRowSvg = (W: number, m: Member, isBusy: boolean, count: number): strin
   return svg(
     W,
     CREW_ROW_H,
-    `${crab(0, 6, m.type, !isBusy, isBusy)}
+    `${crab(EDGE, 6, m.type, !isBusy, isBusy)}
 <text class="t" x="42" y="18" font-family="${FONT}" font-size="13" font-weight="600" fill="${m.color}">${xml(fitText(m.label, 13, textW))}</text>
 <text class="s" x="42" y="34" font-family="${FONT}" font-size="11">${xml(fitText(`${m.role}  ·  ${note}`, 11, textW))}</text>
 ${statusMark(W - 8, 16, isBusy ? 'running' : count ? 'done' : 'idle', m.color)}
@@ -500,7 +514,7 @@ const agentSvg = (W: number, a: AgentRun, at: number): string => {
   return svg(
     W,
     ROW_H,
-    `${crab(0, 14, costumeOf(a.type), false, a.status === 'running')}
+    `${crab(EDGE, 14, costumeOf(a.type), false, a.status === 'running')}
 <text class="t" x="42" y="18" font-family="${FONT}" font-size="13" font-weight="600">${xml(fitText(a.description || a.type, 13, textW))}</text>
 <text x="42" y="34" font-family="${FONT}" font-size="11"><tspan fill="${color}">${xml(m?.label ?? a.type)}</tspan><tspan class="s">  ${xml(meta.join('  ·  '))}</tspan></text>
 <text class="s" x="${42 + barW}" y="49" text-anchor="end" font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${stats}</text>
@@ -516,7 +530,7 @@ const compactSvg = (W: number, list: AgentRun[], t: ReturnType<typeof totals>): 
   const shown = icons.slice(0, fit)
   const more = icons.length - shown.length
   const body = shown
-    .map((a, i) => crab(i * 36, 0, costumeOf(a.type), false, a.status === 'running') + (a.status === 'running' ? `<circle class="live" cx="${i * 36 + 32}" cy="4" r="3" fill="${colorOf(a.type)}"/>` : ''))
+    .map((a, i) => crab(i * 36 + EDGE, 1, costumeOf(a.type), false, a.status === 'running') + (a.status === 'running' ? `<circle class="live" cx="${i * 36 + 32}" cy="4" r="3" fill="${colorOf(a.type)}"/>` : ''))
     .join('')
   const x = shown.length * 36 + (more ? 4 : 0)
   return svg(

@@ -119,7 +119,8 @@ events Claude Code gives it inside your session.
   - debugger: bug hunter;
   - ai-agent-engineer: astronaut.
 
-  A crab walks and its prop moves while that agent works. It all respects reduced-motion
+  While that agent works, its crab dances: it sways side to side with a little hop, raises the
+  claw on the side it leans to, walks in place (the astronaut floats), and its prop moves. It all respects reduced-motion
   settings.
 - **The progress bar** above the message box counts the current batch: the agents started since
   the last batch finished. `×7` opens the panel; `✕` hides the bar until the next batch.
