@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+node_modules/
+.claude-plugin/types/
+.env
+.env.*
+*.bak
+.claude/
+settings.local.json
+*.local.md
+.credentials.json
+*.log
+*.pem
+*.key

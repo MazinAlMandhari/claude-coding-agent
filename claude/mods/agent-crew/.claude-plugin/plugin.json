@@ -1,0 +1,8 @@
+{
+  "name": "agent-crew",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": { "name": "claude-coding-agent" },
+  "description": "Side panel showing your own subagents (planner, test-writer, verifier, reviewers, debugger, AI engineer), each with its own shape and colour, lit while running, plus a list of their runs.",
+  "types": "./types/index.d.ts"
+}

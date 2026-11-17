@@ -1,0 +1,11 @@
+{
+  "name": "coding-agent",
+  "owner": { "name": "claude-coding-agent" },
+  "plugins": [
+    {
+      "name": "agent-crew",
+      "source": "./",
+      "description": "Side panel showing your own subagents, each with its own shape and colour, lit while running."
+    }
+  ]
+}
