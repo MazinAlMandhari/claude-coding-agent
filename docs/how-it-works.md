@@ -128,6 +128,9 @@ events Claude Code gives it inside your session.
 - **The progress bar** above the message box counts the current batch: the agents started since
   the last batch finished. `×7` opens the panel; `✕` hides the bar until the next batch.
 - **In the terminal** the same panel is drawn with text and symbols instead of pictures.
+- **♪ Dance** in the panel, or `/crew-dance`, makes every crab dance for 30 seconds without
+  running an agent (in the terminal, the crew's symbols light up). It's only a show: no model is
+  called and no run is listed. `/crew-dance` also expands a collapsed panel so the dance shows.
 - `/my-agents` opens or closes the panel. A model tool, `crew_status`, lets Claude read the
   panel's state when something looks wrong.
 

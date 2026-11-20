@@ -39,6 +39,8 @@ declare module 'claude-code' {
       panel: Panel
       now: number
       batch: Batch | null
+      /** When the 30-second dance show ends (clock ms); 0 when no show is on. */
+      showUntil: number
     }
   }
 }

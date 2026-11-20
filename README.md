@@ -50,7 +50,9 @@ they are not a security boundary (see [the limits](docs/how-it-works.md#limits-w
 - totals for cost, tokens and time;
 - a progress bar above the message box for the current batch of runs (`1/2 done`, 50%).
 
-`/my-agents` opens or closes the panel.
+`/my-agents` opens or closes the panel. `/crew-dance` (or the panel's **♪ Dance** button) makes the
+whole crew dance for 30 seconds, just for show: no agent runs, no model is called and nothing is
+recorded. (In the terminal the crew's symbols light up instead.)
 
 ## Install
 

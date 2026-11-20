@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 const PANE = {
@@ -164,22 +164,12 @@ test('a working crab dances and waves a free claw while idle crabs keep still', 
   await ui.unmount()
 })
 
-test('the pane grows by exactly the extra height of the larger lineup', async ($, on) => {
+test('narrow panes keep the usual crab size in the lineup', async ($, on) => {
   engine(on)
-  const measure = async (bodyColumns: number) => {
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns } })
-    const svgs = await ui.findAll({ type: 'Svg' })
-    const grid = svgs.filter(s => s.props.alt === 'dotted grid').reduce((sum, s) => sum + Number(s.props.height), 0)
-    const lineup = Number(svgs.find(s => String(s.props.alt).startsWith('Crew:'))?.props.height)
-    await ui.unmount()
-    return { grid, lineup }
-  }
-  const narrow = await measure(20)
-  const wide = await measure(81)
-  // Narrow panes keep the usual crab size (1.1x: 37 px strip); the grid under the content must
-  // grow with the strip, or the last row would be cut off.
-  expect(narrow.lineup).toBe(37)
-  expect(wide.grid - narrow.grid).toBe(wide.lineup - narrow.lineup)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 20 } })
+  const lineup = (await ui.findAll({ type: 'Svg' })).find(s => String(s.props.alt).startsWith('Crew:'))
+  expect(Number(lineup?.props.height)).toBe(37) // 1.1x the crab's 28 units, plus room for the hop
+  await ui.unmount()
 })
 
 test('the desktop bar drawing shrinks to fit so its buttons stay in view', async ($, on) => {
@@ -242,6 +232,24 @@ test('a run still going keeps its batch open, so runs that finish meanwhile are 
   await ui.unmount()
 })
 
+test('the desktop pane has no floating layer to cover the crabs or catch clicks', async ($, on) => {
+  engine(on)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'c1' }))
+  on('turn.complete', () => ({ text: '' }))
+
+  await $.agent.spawn(spawn('planner', 'Plan', 'c1'))
+  await $.turn.complete(finish('c1'))
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 81 } })
+  // The desktop app paints an absolutely positioned Box over everything else, and hands a click
+  // on it to its parent: a backdrop drawn that way hides the crabs, content drawn that way can't
+  // be clicked. So the pane draws none.
+  expect((await ui.findAll({ type: 'Box' })).filter(b => b.props.position === 'absolute')).toEqual([])
+  expect((await ui.findAll({ type: 'Svg' })).filter(s => s.props.alt === 'dotted grid')).toEqual([])
+  expect((await ui.findAll({ type: 'Button' })).length).toBeGreaterThan(0)
+  await ui.unmount()
+})
+
 test('with a single batch there is nothing to fold', async ($, on) => {
   engine(on)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 's1' }))
@@ -252,6 +260,95 @@ test('with a single batch there is nothing to fold', async ($, on) => {
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Button', key: 'earlier' })).toBeFalsy()
+  await ui.unmount()
+})
+
+/** The engine with a clock that moves only when the test advances it. */
+function showEngine(on: On) {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.panes', () => ({ value: [] }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('tool.register', () => ({ value: { tool: 'mcp__agent-crew__crew_status' } }))
+  return clock
+}
+
+const dancers = async (ui: { findAll: (q: { type: 'Svg' }) => Promise<{ props: Record<string, unknown> }[]> }) => {
+  const lineup = (await ui.findAll({ type: 'Svg' })).find(s => String(s.props.alt).startsWith('Crew:'))
+  return (String(lineup?.props.source).match(/ run"><g class="sw">/g) ?? []).length
+}
+
+test('the Dance button makes the whole crew dance without running any agent', async ($, on) => {
+  showEngine(on)
+  const pane = { ...PANE, surface: 'desktop' as const, props: { ...PANE.props, bodyColumns: 81 } }
+
+  let ui = await $.ui.mount(pane)
+  expect(await dancers(ui)).toBe(0)
+  await ui.press({ key: 'dance' })
+  await ui.unmount()
+
+  ui = await $.ui.mount(pane)
+  expect(await dancers(ui)).toBe(7)
+  expect(await ui.find({ type: 'Text', text: /No agent runs yet/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Running/ })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('the show stops by itself after 30 seconds', async ($, on) => {
+  const clock = showEngine(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const pane = { ...PANE, surface: 'desktop' as const, props: { ...PANE.props, bodyColumns: 81 } }
+
+  const ui = await $.ui.mount(pane)
+  await ui.press({ key: 'dance' })
+  await clock.advance(29_000)
+  await ui.unmount()
+  let after = await $.ui.mount(pane)
+  expect(await dancers(after)).toBe(7)
+  await after.unmount()
+
+  await clock.advance(2_000)
+  after = await $.ui.mount(pane)
+  expect(await dancers(after)).toBe(0)
+  await after.unmount()
+})
+
+test('/crew-dance starts the show too', async ($, on) => {
+  showEngine(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  const reply = await $.command.run({ command: 'crew-dance', args: '' } as never)
+  expect(String((reply as { text?: string }).text)).toMatch(/30 seconds/)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 81 } })
+  expect(await dancers(ui)).toBe(7)
+  await ui.unmount()
+})
+
+test('/crew-dance opens a collapsed pane so the dance shows', async ($, on) => {
+  showEngine(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const pane = { ...PANE, surface: 'desktop' as const, props: { ...PANE.props, bodyColumns: 81 } }
+
+  let ui = await $.ui.mount(pane)
+  await ui.press({ key: 'compact' })
+  await ui.unmount()
+  await $.command.run({ command: 'crew-dance', args: '' } as never)
+
+  ui = await $.ui.mount(pane)
+  expect(await dancers(ui)).toBe(7)
+  await ui.unmount()
+})
+
+test('the Dance button sits beside the lineup in the terminal, off the summary line', async ($, on) => {
+  showEngine(on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Button', key: 'dance' })).toBeTruthy()
+  await ui.press({ key: 'dance' })
+  expect((await ui.find({ type: 'Button', key: 'dance' }))?.props.label).toContain('Dancing')
   await ui.unmount()
 })
 

@@ -14,6 +14,7 @@ import type { AgentRun, Batch, Panel, RunStatus } from '../types'
 const PANE = 'agent-crew'
 const TITLE = 'My agents'
 const COMMAND = 'my-agents'
+const DANCE_COMMAND = 'crew-dance'
 const STATUS_TOOL = 'crew_status'
 
 /** The crew: each agent's colour (matches its agent file), a shape for the terminal, and a role line. */
@@ -43,6 +44,9 @@ const panel = atom({ plugin: 'agent-crew', key: 'panel' } as const, {
 } as Panel)
 const now = atom({ plugin: 'agent-crew', key: 'now' } as const, 0)
 const batch = atom({ plugin: 'agent-crew', key: 'batch' } as const, null as Batch | null)
+// While a show is on, the whole crew dances in the lineup with no agent running; 0 when off.
+const showUntil = atom({ plugin: 'agent-crew', key: 'showUntil' } as const, 0)
+const SHOW_MS = 30_000
 
 // ---------------------------------------------------------------------------- numbers
 
@@ -426,21 +430,12 @@ const barText = (s: BarState, width: number): string => {
 
 // ---------------------------------------------------------------------------- panel drawings (desktop)
 
-// The pane's backdrop: a dotted grid as tall as the content laid over it.
-const GRID_STEP = 16
-const LINE_H = 24
-const GRID_TILE = 4096
+// No backdrop behind the pane's pictures: the desktop app paints a floating layer over the
+// content, so a dotted grid laid behind them covered the crabs.
 const ROW_H = 66
 const CREW_ROW_H = 46
 const LINEUP_H = 34
 const HEADER_H = 44
-
-const gridTiles = (h: number) => Array.from({ length: Math.ceil(h / GRID_TILE) }, (_, i) => Math.min(GRID_TILE, h - i * GRID_TILE))
-const gridSvg = (W: number, h: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${h}" viewBox="0 0 ${W} ${h}">
-<style>.d{fill:#d9d8d4}@media (prefers-color-scheme: dark){.d{fill:#3a3a38}}</style>
-<defs><pattern id="g" width="${GRID_STEP}" height="${GRID_STEP}" patternUnits="userSpaceOnUse"><circle class="d" cx="${GRID_STEP / 2}" cy="${GRID_STEP / 2}" r="1"/></pattern></defs>
-<rect width="${W}" height="${h}" fill="url(#g)"/>
-</svg>`
 
 const PANE_CSS = `<style>
 .t{fill:#1f1f1f}.s{fill:#6b6b68}.m{fill:#9a9a96}.k{fill:#ecebe8}.ln{stroke:#e4e4e1}.tile{fill:#f4f3f0}
@@ -586,8 +581,19 @@ async function togglePane($: EngineInterface): Promise<boolean> {
 
 async function tick($: EngineInterface): Promise<void> {
   const list = await read($, runs)
-  if (!list.some(a => a.status === 'running')) return
+  const until = await read($, showUntil)
+  if (!list.some(a => a.status === 'running') && until === 0) return
   const at = await $.clock.now()
+  // Checked again inside the write: a show restarted meanwhile keeps its new end.
+  if (until !== 0 && at >= until) await update($, showUntil, u => (u !== 0 && at >= u ? 0 : u))
+  await update($, now, () => at)
+}
+
+// The crew dances for 30 seconds, just for show: no agent runs and nothing is recorded.
+async function startShow($: EngineInterface): Promise<void> {
+  await ensureReady($) // the once-a-second tick is what ends the show
+  const at = await $.clock.now()
+  await update($, showUntil, () => at + SHOW_MS)
   await update($, now, () => at)
 }
 
@@ -595,6 +601,10 @@ async function setUp($: EngineInterface): Promise<void> {
   await $.command.register({
     name: COMMAND,
     description: 'Show the My agents panel: your own subagents, with what each is doing, its model, context, cost and time',
+  })
+  await $.command.register({
+    name: DANCE_COMMAND,
+    description: 'Make the crew dance in the My agents panel for 30 seconds, just for show (no agent runs)',
   })
   await $.tool.register({
     name: STATUS_TOOL,
@@ -630,6 +640,8 @@ async function statusReport($: EngineInterface): Promise<string> {
     loaded: true,
     panelPlaced: isPlaced,
     bar: b ? barOf(b, list) : null,
+    panel: await read($, panel),
+    batches: batchesOf(list).map(g => g.length),
     runs: list.map(r => ({ type: r.type, description: r.description, status: r.status, model: r.model, costUsd: r.costUsd })),
   })
 }
@@ -735,6 +747,18 @@ export const register: Register = on => {
     return { result: status }
   })
 
+  on('command.run', { command: DANCE_COMMAND }, async $ => {
+    await startShow($).catch(() => undefined)
+    // A collapsed pane draws no lineup, so open it up to show the dance.
+    await update($, panel, prev => ({ ...prev, isCompact: false })).catch(() => undefined)
+    const { isPlaced } = await open($).catch(() => ({ isPlaced: false }))
+    return {
+      text: isPlaced
+        ? 'The crew is dancing in the My agents panel for 30 seconds. No agent is running.'
+        : 'The crew is dancing for 30 seconds, but this app did not place the My agents panel on screen.',
+    }
+  })
+
   on('command.run', { command: COMMAND }, async $ => {
     await update($, now, () => 0).catch(() => undefined)
     const { isPlaced } = await open($).catch(() => ({ isPlaced: false }))
@@ -785,6 +809,11 @@ export const register: Register = on => {
     const finished = list.filter(a => a.status !== 'running' && latest.has(a.id)).reverse()
     const earlier = list.filter(a => a.status !== 'running' && !latest.has(a.id)).reverse()
     const busy = new Set(running.map(a => a.type))
+    const until = await read($, showUntil)
+    // A show past its end counts as over even before the tick clears it (say, one saved at quit).
+    const isShow = until > 0 && until > (await $.clock.now())
+    // The lineup dances for a show as well as for real work; the counts stay real.
+    const dancing = isShow ? new Set(CREW.map(m => m.type)) : busy
     const countOf = (type: string) => list.filter(a => a.type === type && a.status !== 'running').length
     const t = totals(list, at)
     const isEmpty = list.length === 0
@@ -793,12 +822,12 @@ export const register: Register = on => {
     if (e.props.placement === 'widget') {
       if (e.surface === 'desktop' && 'Svg' in ui) {
         const { Svg } = ui
-        return <Svg source={lineupSvg(CREW.length * 36, busy, false)} alt={`${running.length} of your agents working`} width={CREW.length * 36} height={LINEUP_H} />
+        return <Svg source={lineupSvg(CREW.length * 36, dancing, false)} alt={`${running.length} of your agents working`} width={CREW.length * 36} height={LINEUP_H} />
       }
       return (
         <Text>
           {CREW.map(m => (
-            <Text key={m.type} color={m.color} dimColor={!busy.has(m.type)} bold={busy.has(m.type)}>
+            <Text key={m.type} color={m.color} dimColor={!dancing.has(m.type)} bold={dancing.has(m.type)}>
               {m.glyph}{' '}
             </Text>
           ))}
@@ -838,6 +867,9 @@ export const register: Register = on => {
         onPress={() => update($, panel, prev => ({ ...prev, isEarlierOpen: !prev.isEarlierOpen }))}
       />
     )
+    const danceButton = (
+      <Button key="dance" label={isShow ? '♪ Dancing…' : '♪ Dance'} plain onPress={() => startShow($)} />
+    )
     const summary = `≈${fmtCost(t.cost)}, ${fmtTokens(t.tokens)} tokens, ${fmtTime(t.time)}`
 
     if (e.surface === 'desktop' && 'Svg' in ui) {
@@ -856,41 +888,34 @@ export const register: Register = on => {
           </Box>
         )
       }
-      const shownDone = (p.isDoneCollapsed ? 0 : finished.length) + (p.isEarlierOpen ? earlier.length : 0)
-      const crewRows = p.isCrewOpen ? CREW.length : 0
-      const lines = 2 + (isEmpty ? 1 : 0) + (running.length > 0 ? 1 : 0) + (finished.length > 0 ? 1 : 0) + (earlier.length > 0 ? 1 : 0)
-      const gridH = HEADER_H + lineupHeight(W) + lines * LINE_H + crewRows * CREW_ROW_H + (running.length + shownDone) * ROW_H
       return (
         <Box flexDirection="column">
-          {/* The grid sizes the pane; the content is placed over it. */}
-          {gridTiles(gridH).map((tileH, i) => (
-            <Svg key={`grid-${i}`} source={gridSvg(W, tileH)} alt="dotted grid" width={W} height={tileH} />
-          ))}
-          <Box flexDirection="column" position="absolute" top={0} left={0} right={0}>
-            <Svg source={headerSvg(W, t)} alt={summary} width={W} height={HEADER_H} />
-            <Svg source={lineupSvg(W, busy)} alt={`Crew: ${CREW.map(m => `${m.label}${busy.has(m.type) ? ' (working)' : ''}`).join(', ')}`} width={W} height={lineupHeight(W)} />
-            {toggleCrew}
-            {p.isCrewOpen &&
-              CREW.map(m => (
-                <Svg key={`crew-${m.type}`} source={crewRowSvg(W, m, busy.has(m.type), countOf(m.type))} alt={`${m.label}: ${m.role}`} width={W} height={CREW_ROW_H} />
-              ))}
-            {toggleCompact}
-            {isEmpty && <Text dimColor>No agent runs yet in this session.</Text>}
-            {running.length > 0 && section('h-run', `Running · ${running.length}`)}
-            {running.map(a => (
-              <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, running`} width={W} height={ROW_H} />
+          <Svg source={headerSvg(W, t)} alt={summary} width={W} height={HEADER_H} />
+          <Svg source={lineupSvg(W, dancing)} alt={`Crew: ${CREW.map(m => `${m.label}${busy.has(m.type) ? ' (working)' : isShow ? ' (dancing)' : ''}`).join(', ')}`} width={W} height={lineupHeight(W)} />
+          {toggleCrew}
+          {p.isCrewOpen &&
+            CREW.map(m => (
+              <Svg key={`crew-${m.type}`} source={crewRowSvg(W, m, busy.has(m.type), countOf(m.type))} alt={`${m.label}: ${m.role}`} width={W} height={CREW_ROW_H} />
             ))}
-            {finished.length > 0 && toggleDone}
-            {!p.isDoneCollapsed &&
-              finished.map(a => (
-                <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, ${a.status}`} width={W} height={ROW_H} />
-              ))}
-            {earlier.length > 0 && toggleEarlier}
-            {p.isEarlierOpen &&
-              earlier.map(a => (
-                <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, ${a.status}`} width={W} height={ROW_H} />
-              ))}
+          <Box flexDirection="row" gap={3}>
+            {toggleCompact}
+            {danceButton}
           </Box>
+          {isEmpty && <Text dimColor>No agent runs yet in this session.</Text>}
+          {running.length > 0 && section('h-run', `Running · ${running.length}`)}
+          {running.map(a => (
+            <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, running`} width={W} height={ROW_H} />
+          ))}
+          {finished.length > 0 && toggleDone}
+          {!p.isDoneCollapsed &&
+            finished.map(a => (
+              <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, ${a.status}`} width={W} height={ROW_H} />
+            ))}
+          {earlier.length > 0 && toggleEarlier}
+          {p.isEarlierOpen &&
+            earlier.map(a => (
+              <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${memberOf(a.type)?.label ?? a.type}, ${modelName(a.model)}, ${a.status}`} width={W} height={ROW_H} />
+            ))}
         </Box>
       )
     }
@@ -937,13 +962,16 @@ export const register: Register = on => {
           </Text>
           {toggleCompact}
         </Box>
-        <Text>
-          {CREW.map(m => (
-            <Text key={m.type} color={m.color} dimColor={!busy.has(m.type)} bold={busy.has(m.type)}>
-              {m.glyph}{' '}
-            </Text>
-          ))}
-        </Text>
+        <Box flexDirection="row" gap={2}>
+          <Text>
+            {CREW.map(m => (
+              <Text key={m.type} color={m.color} dimColor={!dancing.has(m.type)} bold={dancing.has(m.type)}>
+                {m.glyph}{' '}
+              </Text>
+            ))}
+          </Text>
+          {danceButton}
+        </Box>
         {toggleCrew}
         {p.isCrewOpen &&
           CREW.map(m => (
