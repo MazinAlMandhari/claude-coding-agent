@@ -618,7 +618,10 @@ def install(config_dir: Path, is_default_dir: bool, use_plugin_cli: bool, overwr
     if use_plugin_cli:
         ok = install_plugin(config_dir, is_default_dir) and ok
     if ok:
-        print("Done. Start a new Claude Code session to pick it up.")
+        print(
+            "Done. In a session that is already open, type /reload-plugins to load the new panel and "
+            "agents; start a new session to be sure changes to the rules, hooks and settings apply."
+        )
         if not existed:
             print(f"Tip: open {config_dir / 'CLAUDE.md'} and fill in 'About me' so Claude knows how you work.")
     else:

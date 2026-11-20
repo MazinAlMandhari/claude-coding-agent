@@ -109,6 +109,9 @@ git pull
 python3 install.py        # or: py install.py
 ```
 
+Then type `/reload-plugins` in any open Claude Code session to load the new panel and agents, or
+start a new session. Changes to the rules, hooks and settings are only sure to apply in a new session.
+
 ## Remove
 
 ```bash
